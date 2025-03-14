@@ -41,69 +41,56 @@ classdef Robot_def < handle
             robot.wheelSpeeds(1) = robot.robotSpeed / (robot.wheelDia/2);
             robot.wheelSpeeds(2) = robot.wheelSpeeds(1);
 
-            % Add out of range thetas
-            % while(theta > 2*pi)
-            %     theta = 
-            % end
-            
-            if (theta == 0 || (theta <= pi/2 && theta >= 0) || (theta >= 3*pi/2 && theta <= 2*pi) || ...
-                    (theta >= -pi/2 && theta <= 0) || (theta <= -3*pi/2 && theta > -2*pi))
-                facingNS = 'N';
-            elseif (theta == pi || (theta > pi/2 && theta < 3*pi/2) || (theta < -pi/2 && theta > -3*pi/2))
-                facingNS = 'S';
-            else
-                facingNS = 'error';
-            end
-
-            if ((theta >= 0 && theta <= pi) || (theta <= -pi && theta <= -2*pi))
-                facingEW = 'E';
-            elseif ((theta > pi && theta <= 2*pi) || (theta < 0 && theta > -pi))
-                facingEW = 'W';
-            else
-                facingEW = 'error';
-            end
-            
             t_start = tic;
-            dt = toc;
             dSTotal = 0;
-            % Add Range, not ==
-            while ~(robot.poseEst(1) == targetPose(1)) && ~(robot.poseEst(2) == targetPose(2))
-                deltaS = robot.robotSpeed*dt;
-                % Update x position
-                if (facingEW == 'E')
-                    robot.poseEst(1) = robot.poseEst(1) + abs(cos(theta))*deltaS;
-                elseif (facingEW == 'W')
-                    robot.poseEst(1) = robot.poseEst(1) - abs(cos(theta))*deltaS;
-                else
-                    robot.poseEst(1) = robot.poseEst(1);
-                end
-                
-                % Update y position
-                if (facingNS == 'N')
-                    robot.poseEst(2) = robot.poseEst(2) + abs(sin(theta))*deltaS;
-                elseif (facingNS == 'S')
-                    robot.poseEst(2) = robot.poseEst(2) - abs(sin(theta))*deltaS;
-                else
-                    robot.poseEst(2) = robot.poseEst(2);
-                end
+            % Increase tolerance for position updates
+            tolerance = 1e-2;
+            maxIterations = 10000000; % Limit the number of iterations to prevent infinite loop
+            iteration = 0;
+            while ~(abs(robot.poseEst(1) - targetPose(1)) < tolerance && abs(robot.poseEst(2) - targetPose(2)) < tolerance)
+                dt = toc(t_start);
+                t_start = tic;
+                deltaS = robot.robotSpeed * dt;
+                % Update x and y positions
+                robot.poseEst(1) = robot.poseEst(1) + cos(theta) * deltaS;
+                robot.poseEst(2) = robot.poseEst(2) + sin(theta) * deltaS;
                 dSTotal = dSTotal + deltaS;
-                dt = toc;
+                iteration = iteration + 1;
+                if iteration > maxIterations
+                    disp('driveFwd: Maximum iterations reached');
+                    break;
+                end
             end
+            % Update the robot's actual pose
+            robot.pose = robot.poseEst;
+            disp(['driveFwd: Reached target pose: [', num2str(robot.pose'), ']']);
         end
 
         function dThetaTotal = pointTurn(robot, goalHeading, robSpinSpeed) % CW = negative, CCW = positive
             % L/2 * omega = vWheel = wheelSpeed * wheelDia/2
-            robot.wheelSpeeds(1) = - robot.wheelbase/2 * robSpinSpeed/(0.5*robot.wheelDia);
-            robot.wheelSpeeds(2) = - robot.wheelSpeeds(1);
-            now = tic;
-            dt = toc;
+            robot.wheelSpeeds(1) = -robot.wheelbase/2 * robSpinSpeed / (0.5 * robot.wheelDia);
+            robot.wheelSpeeds(2) = -robot.wheelSpeeds(1);
+            t_start = tic;
             dThetaTotal = 0;
-            while ~(robot.poseEst(3) == goalHeading)
-                deltaTheta = robSpinSpeed*dt;
+            % Increase tolerance for heading updates
+            tolerance = 1e-1;
+            maxIterations = 500000; % Limit the number of iterations to prevent infinite loop
+            iteration = 0;
+            while abs(robot.poseEst(3) - goalHeading) > tolerance
+                dt = toc(t_start);
+                t_start = tic;
+                deltaTheta = robSpinSpeed * dt;
                 robot.poseEst(3) = robot.poseEst(3) + deltaTheta;
                 dThetaTotal = dThetaTotal + deltaTheta;
-                dt = toc;
+                iteration = iteration + 1;
+                if iteration > maxIterations
+                    disp('pointTurn: Maximum iterations reached');
+                    break;
+                end
             end
+            % Update the robot's actual pose
+            robot.pose = robot.poseEst;
+            disp(['pointTurn: Reached goal heading: ', num2str(robot.pose(3))]);
         end
 
         function dTheta = turnToWaypoint(robot, waypoint)
@@ -118,28 +105,30 @@ classdef Robot_def < handle
             diff_y = waypoint_y - robot_y;
             
             % Get angle to waypoint between [-pi, pi]
-            angleToWaypoint = getPiToPi(atan(diff_y/diff_x));
+            angleToWaypoint = getPiToPi(atan2(diff_y, diff_x));
 
             % determine turn direction, turn
             if (angleToWaypoint - currHeading) > pi
-                dTheta = pointTurn(robot, angleToWaypoint, -1)
+                dTheta = robot.pointTurn(angleToWaypoint, -1);
             else
-                dTheta = pointTurn(robot, angleToWaypoint, 1)
+                dTheta = robot.pointTurn(angleToWaypoint, 1);
             end
+            disp(['turnToWaypoint: Turning to waypoint: [', num2str(waypoint), '] with heading: ', num2str(angleToWaypoint)]);
         end
 
         function [dS, dTheta] = goToPoint(robot, point, endOrientation)
-            dTheta = turnToWaypoint(robot, point);
-            dS = driveFwd(robot, point, 1);
+            dTheta = robot.turnToWaypoint(point);
+            dS = robot.driveFwd(point, 1);
 
-            if nargin < 2 % if endOrientation is specified...
+            if nargin == 3 % if endOrientation is specified...
                 % determine turn direction, turn
                 if (endOrientation - robot.poseEst(3)) > pi
-                    dTheta = dTheta + pointTurn(robot, endOrientation, -1);
+                    dTheta = dTheta + robot.pointTurn(endOrientation, -1);
                 else
-                    dTheta = dTheta + pointTurn(robot, endOrientation, 1);
+                    dTheta = dTheta + robot.pointTurn(endOrientation, 1);
                 end
             end
+            disp(['goToPoint: Reached point: [', num2str(robot.pose'), ']']);
         end
     end
 end

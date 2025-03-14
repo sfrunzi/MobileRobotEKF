@@ -1,7 +1,3 @@
 function angle = getPiToPi(angle)
-    if angle > pi
-        angle = angle - 2*pi;
-    elseif angle < -pi
-        angle = angle + 2*pi;
-    end
+    angle = mod(angle + pi, 2*pi) - pi;
 end

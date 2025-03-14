@@ -21,11 +21,11 @@ classdef World_def < handle
             world.map_res = res;
             world.waypoints = wpts;
             world.landmarks = lmks;
-            
+
             % Empty grid map
-            x_grid = x_min : map_res : x_max;
-            y_grid = y_min : map_res : y_max;
-            world.gridMap = zeros(x_grid, y_grid);
+            numGridCellsX = (x_max-x_min) / res;
+            numGridCellsY = (y_max-y_min) / res;
+            world.gridMap = zeros(numGridCellsX, numGridCellsY);
             world.occMap = world.gridMap;
 
             % True occupancy map generation
@@ -33,16 +33,22 @@ classdef World_def < handle
                 occupied = 1;
                 x_occ = world.waypoints(n, 1);
                 y_occ = world.waypoints(n, 2);
-                world.occMap(x_occ, y_occ) = occupied;
+                % Convert coordinates to grid indices
+                x_idx = round((x_occ - x_min) / res) + 1;
+                y_idx = round((y_occ - y_min) / res) + 1;
+                % Ensure indices are within bounds
+                if x_idx > 0 && x_idx <= numGridCellsX && y_idx > 0 && y_idx <= numGridCellsY
+                    world.occMap(x_idx, y_idx) = occupied;
+                end
             end
         end
-        
+
         % Add Landmarks
         function lmk = addLandmark(world, x, y)
             world.landmarks = [world.landmarks; [x, y]];
             lmk = world.landmarks;
         end
-        
+
         % Add Waypoints
         function wpt = addWaypoint(world, x, y)
             world.waypoints = [world.waypoints; [x, y]];
